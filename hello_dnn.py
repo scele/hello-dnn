@@ -128,6 +128,7 @@ def plot_audio(*data):
         axes[i].set_ylabel("XXX")
         audio(series, framerate)
     axes[-1].set_xlabel("Time (s)")
+    axes[-1].set_xlim([0, chunk_seconds])
 
 plot_audio(*data[:,:,LEFT])
         
@@ -144,31 +145,25 @@ plot_audio(*data[:,:,LEFT])
 def index_of_first(iterable, predicate):
     return next(i for i, x in enumerate(iterable) if predicate(x))
 
-start = {}
-for part in [0,1]:
-    mag = data[part][:,0]
-    start[part] = index_of_first(mag, lambda x: x > 100)
-    print('Audio starts at sample {} (t = {} s)'.format(start[part], start[part] / framerate))
-    
-shift = start[0] - start[1]
-print('Correction shift: ', shift)
+def get_start(series):
+    tmp = index_of_first(series, lambda x: x > 100)
+    print('Audio starts at sample {} (t = {} s)'.format(tmp, tmp / framerate))
+    return tmp
+ 
+start = [get_start(x) for x in data[:,:,LEFT]]
 
-def shift_data(part):
-    d = np.roll(data[part], -start[part], 0)
-    d.resize([d.shape[0] - max(start[0], start[1]), 2])
-    print(d.shape)
-    init_fig()
-    y = d[:,0]
-    plt.plot(get_x(y), y, linewidth=0.1, color='red')
-    audio(d[:,0], framerate)
+#%%
+
+def shift_data(track, start, length):
+    d = np.roll(track, -start, 0)
+    d.resize([d.shape[0] - length, 2])
     return d
 
-shifted_data = {}
-for part in [0,1]:
-    shifted_data[part] = shift_data(part)
-    
-    
+shifted_data = np.array([shift_data(track, s, max(start)) for track, s in zip(data, start)])
 
+plot_audio(*shifted_data[:,:,LEFT])
+    
+#%%
 
 # ### Match volume
 
@@ -177,28 +172,20 @@ for part in [0,1]:
 from numpy.linalg import norm
 
 window = int(2 * framerate)
-n0 = norm(shifted_data[0][0:window,0], 1)
-n1 = norm(shifted_data[1][0:window,0], 1)
+n0 = norm(shifted_data[0,0:window,LEFT], 1)
+n1 = norm(shifted_data[1,0:window,LEFT], 1)
 
-max0 = max(shifted_data[0][:,0])
-min0 = min(shifted_data[0][:,0])
+max0 = max(shifted_data[0,:,LEFT])
+min0 = min(shifted_data[0,:,LEFT])
 
 print("Scaling: ", n0, n1, n0 / n1)
 print("Clamping: ", max0, min0)
 
-# Scale
-normalized_data = {}
-normalized_data[0] = shifted_data[0]
-normalized_data[1] = np.clip(shifted_data[1] * (n0 / n1), min0, max0)
+# Scale and clamp
+normalized_data = np.array([shifted_data[0], np.clip(shifted_data[1] * (n0 / n1), min0, max0)])
+plot_audio(*normalized_data[:,:,LEFT])
 
-# And clamp
-for part in [0, 1]:
-    init_fig()
-    d = normalized_data[part]
-    y = d[:,0]
-    plt.plot(get_x(y), y, linewidth=0.1, color='red')
-    audio(d[:,0], framerate)
-
+#%%
 
 # ### Preprocess the chunks
 # 
